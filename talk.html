@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Managing AWS Services with Lambda and CloudWatch</title>
+<meta name="author" content="(Chris Johnson Bidler)"/>
+<style type="text/css">
+.underline { text-decoration: underline; }
+</style>
+<link rel="stylesheet" href="http://cdn.jsdelivr.net/reveal.js/3.0.0/css/reveal.css"/>
+
+<link rel="stylesheet" href="http://cdn.jsdelivr.net/reveal.js/3.0.0/css/theme/moon.css" id="theme"/>
+
+<link rel="stylesheet" href="http://cdn.jsdelivr.net/reveal.js/3.0.0/lib/css/zenburn.css"/>
+<!-- If the query includes 'print-pdf', include the PDF print sheet -->
+<script>
+    if( window.location.search.match( /print-pdf/gi ) ) {
+        var link = document.createElement( 'link' );
+        link.rel = 'stylesheet';
+        link.type = 'text/css';
+        link.href = 'http://cdn.jsdelivr.net/reveal.js/3.0.0/css/print/pdf.css';
+        document.getElementsByTagName( 'head' )[0].appendChild( link );
+    }
+</script>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+<section id="sec-title-slide"><h1 class="title">Managing AWS Services with Lambda and CloudWatch</h1><h2 class="author">Chris Johnson Bidler</h2><p class="date">Created: 2017-02-16 Thu 17:25</p>
+</section>
+
+<section>
+<section id="slide-orgheadline2">
+<h2 id="orgheadline2">Your Humble Narrator</h2>
+<div class="outline-text-2" id="text-orgheadline2">
+</div></section>
+<section id="slide-orgheadline1">
+<h3 id="orgheadline1">Chris Johnson Bidler</h3>
+<ul>
+<li>Senior Cloud Computing Engineer @ Transunion</li>
+<li>AWS Certified SAA, Sysops Engineer, Developer</li>
+<li>&gt;15 years dev experience</li>
+<li>Mostly Java, mostly healthcare IT</li>
+<li>Over the last ~4 years, role has evolved: 
+<ul>
+<li>dev(ops?) -&gt; devops -&gt; (dev)ops</li>
+
+</ul></li>
+<li>@hlprmnky on Twitter and Github</li>
+<li>cjohnso@transunion.com</li>
+
+</ul>
+</section>
+</section>
+<section>
+<section id="slide-orgheadline5">
+<h2 id="orgheadline5">What this talk is about</h2>
+<div class="outline-text-2" id="text-orgheadline5">
+</div></section>
+<section id="slide-orgheadline3">
+<h3 id="orgheadline3"><del>Craven theft</del> Standing on the shoulders of giants</h3>
+<p>
+At re:Invent this year, I saw <i>several</i> talks with different uses of a new
+design pattern. I thought I could put them together into a narrative and tell
+you about it.
+</p>
+</section>
+<section id="slide-orgheadline4">
+<h3 id="orgheadline4">The pattern: Lambda as the target for AWS lifecycle events</h3>
+<ul>
+<li>You don't get paged with "This thing happened, do something!"</li>
+<li>You get paged with "this thing happened, this action was taken, enjoy your lunch"</li>
+
+</ul>
+</section>
+</section>
+<section>
+<section id="slide-orgheadline9">
+<h2 id="orgheadline9">What is AWS Lambda?</h2>
+<div class="outline-text-2" id="text-orgheadline9">
+</div></section>
+<section id="slide-orgheadline6">
+<h3 id="orgheadline6">With apologies to Alan Kay</h3>
+<p>
+"<del>LISP</del> AWS Lambda is not a <del>programming language</del> AWS Service; <del>LISP</del> AWS Lambda is a building material"
+</p>
+</section>
+<section id="slide-orgheadline7">
+<h3 id="orgheadline7">Disembodied Functions</h3>
+<p>
+AWS Lambda allows you to execute <span class="underline">stateless functions</span> without knowing or caring
+about any of the underlying infrastructure.
+</p>
+<ul>
+<li>Functions receive an <span class="underline">event</span> and a <span class="underline">context</span> from Lambda</li>
+<li>Can execute for up to 5 minutes</li>
+<li>Can log results and telemetry to CloudTrail</li>
+<li>Can make API calls for side effects
+<ul>
+<li>You get your language's AWS SDK libs pre-loaded</li>
+
+</ul></li>
+
+</ul>
+</section>
+<section id="slide-orgheadline8">
+<h3 id="orgheadline8">Okay, so how does that help manage services?</h3>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var AWS = require('aws-sdk')
+
+function handler(event, context, callback) {
+  const new_read_capacity = event["read_cap"]
+  const new_write_capacity = event["write_cap"]
+  const table_name = event["table_name"]
+  var dynamo = new AWS.DynamoDB()
+  const params = {
+   ProvisionedThroughput: {
+    ReadCapacityUnits: new_read_capacity, 
+    WriteCapacityUnits: new_write_capacity
+   }, 
+   TableName: table_name
+  }
+  dynamodb.updateTable(params, function(err, data) {
+    if (err) console.log(err, err.stack) // an error occurred
+    else     console.log(data)           // successful response
+  })
+  callback(null, 'All done all done all done.')
+}
+</code></pre>
+</div>
+</section>
+</section>
+<section>
+<section id="slide-orgheadline14">
+<h2 id="orgheadline14">CloudWatch</h2>
+<div class="outline-text-2" id="text-orgheadline14">
+</div></section>
+<section id="slide-orgheadline10">
+<h3 id="orgheadline10">From the horse's mouth</h3>
+<p>
+Amazon CloudWatch is a monitoring service for AWS cloud resources and the applications you run on AWS. 
+You can use Amazon CloudWatch to collect and track metrics, collect and monitor log files, set alarms, 
+and automatically react to changes in your AWS resources.
+</p>
+</section>
+<section id="slide-orgheadline11">
+<h3 id="orgheadline11">Events - Triggers for action</h3>
+<p>
+CloudWatch Events happen when something in your AWS ecology changes, like: 
+</p>
+<ul>
+<li>&#x2026;a new EC2 instance is created</li>
+<li>&#x2026;a DynamoDB table exceeds provisioned throughput</li>
+<li>&#x2026;someone turns off CloudTrail logging</li>
+
+</ul>
+</section>
+<section id="slide-orgheadline12">
+<h3 id="orgheadline12">Events have a Target</h3>
+<ul>
+<li>Communicate: Send an SNS Message, Publish to SQS or Kinesis</li>
+<li>Builtin Actions: Snapshot EBS, Terminate EC2 instance</li>
+<li><i>Execute a Lambda function</i></li>
+
+</ul>
+</section>
+<section id="slide-orgheadline13">
+<h3 id="orgheadline13">This is where the magic happens</h3>
+<p>
+With an AWS Lambda function as your event target, you can react <span class="underline">immediately</span> 
+to any event with a custom response that can be as simple or as complex as you need.
+<img src="images/cloudwatch_event_target.png" alt="cloudwatch_event_target.png" />
+</p>
+
+</section>
+</section>
+<section>
+<section id="slide-orgheadline18">
+<h2 id="orgheadline18">Scenario 1: Decorating CloudTrail logs</h2>
+<p>
+AWS CloudTrail is very granular but individual events don't hold very much information.
+</p>
+</section>
+<section id="slide-orgheadline15">
+<h3 id="orgheadline15">Solution: Decorate CloudTrail events using Lambda</h3>
+<ul>
+<li>Send CloudTrail events to CloudWatch Logs</li>
+<li>Create a filter on the CloudTrail log stream 
+<ul>
+<li>Publish a custom metric</li>
+<li>Alarm on that metric to an SNS topic</li>
+<li>SNS events will have CloudTrail data</li>
+
+</ul></li>
+
+</ul>
+</section>
+<section id="slide-orgheadline16">
+<h3 id="orgheadline16">Creating the metric filter</h3>
+
+<div class="figure">
+<p><img src="images/cloudtrail_metric_filter.png" alt="cloudtrail_metric_filter.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline17">
+<h3 id="orgheadline17">Lambda function can "enrich" that data stream</h3>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var AWS = require('aws-sdk')
+
+exports.handler = function(event, context, callback) {
+  var EC2 = AWS.EC2()
+  const intance_id = event["instanceId"]
+  const instance_details = EC2.describeInstances([instance_id])
+  callback(null, instance_details)
+}
+</code></pre>
+</div>
+
+<p>
+Here we have seen an example of using the power of Lambda functions to <span class="underline">read</span> state 
+from our AWS ecology. What can we do if we start to <span class="underline">write</span> state as well?
+</p>
+</section>
+</section>
+<section>
+<section id="slide-orgheadline37">
+<h2 id="orgheadline37">Scenario 2: Privileged Credentials In the Wild!</h2>
+<div class="outline-text-2" id="text-orgheadline37">
+</div></section>
+<section id="slide-orgheadline19">
+<h3 id="orgheadline19">The Nightmare Scenario</h3>
+<ul>
+<li>A disgruntled employee</li>
+<li>Poorly-designed mobile app leaks an STS credential
+<ul>
+<li>into device logs</li>
+<li>over MitM'd airport wifi</li>
+
+</ul></li>
+<li>Despite <i>everyone's</i> best efforts, checked into Github</li>
+
+</ul>
+</section>
+<section id="slide-orgheadline20">
+<h3 id="orgheadline20">Maybe your attacker is this guy</h3>
+
+<div class="figure">
+<p><img src="images/Griefer.png" alt="Griefer.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline21">
+<h3 id="orgheadline21">But maybe it's <i>this</i> guy</h3>
+
+<div class="figure">
+<p><img src="images/cyber_hax0r.jpg" alt="cyber_hax0r.jpg" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline22">
+<h3 id="orgheadline22">Attacker Plan Of Action</h3>
+<ul>
+<li>Create a new IAM resource with elevated permissions</li>
+<li>Log in with the new credentials</li>
+<li>Turn off CloudTrail logging</li>
+<li>Find a nice, quiet region (ap-northeast-1?)</li>
+<li>Spin up a bunch of `f1.16xlarge`s and mine some bitcoin</li>
+<li>By the time you get a billing alert email, attacker is up 0.175BTC</li>
+
+</ul>
+</section>
+<section id="slide-orgheadline29">
+<h3 id="orgheadline29">How does Lambda get us inside this attacker's OODA loop?</h3>
+<div class="outline-text-3" id="text-orgheadline29">
+</div></section>
+<section id="slide-orgheadline23">
+<h4 id="orgheadline23">Response to CloudTrail event</h4>
+</section>
+<section id="slide-orgheadline24">
+<h4 id="orgheadline24">Logging was turned off?</h4>
+
+<div class="figure">
+<p><img src="images/cloudtrail_logging_off.png" alt="cloudtrail_logging_off.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline25">
+<h4 id="orgheadline25">So turn it back on</h4>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var aws = require('aws-sdk')
+exports.handler = (event, context, callback) =&gt; {
+    const cloudtrail = aws.CloudTrail()
+    cloudtrail.startLogging({}) // obj can hold a trail ARN if you prefer
+    callback(null, 'CloudTrail logging restored');
+};
+</code></pre>
+</div>
+</section>
+<section id="slide-orgheadline26">
+<h4 id="orgheadline26">&#x2026;and we're done</h4>
+
+<div class="figure">
+<p><img src="images/useless_machine.gif" alt="useless_machine.gif" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline27">
+<h4 id="orgheadline27">Instance created?</h4>
+
+<div class="figure">
+<p><img src="images/ec2_run_instances.png" alt="ec2_run_instances.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline28">
+<h4 id="orgheadline28">Check its attributes and kill any outlier</h4>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var AWS = require('aws-sdk')
+const ALLOWED_REGIONS = ['us-east-1', 'us-west-1', 'eu-west-2']
+exports.handler = (event, context, callback) =&gt; {
+    const region = event['region']
+    const instance_id = event['instance_id']
+    if(ALLOWED_REGIONS.indexOf(instance_id) &lt; 0) {
+	var ec2 = AWS.EC2()
+	ec2.terminateInstances([instance_id])
+    }
+    callback(null, 'Region check complete for instance ' + instance_id)
+}
+</code></pre>
+</div>
+</section>
+<section id="slide-orgheadline33">
+<h3 id="orgheadline33">Goal state for our attacker</h3>
+
+<div class="figure">
+<p><img src="images/abe_doorman.gif" alt="abe_doorman.gif" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline30">
+<h4 id="orgheadline30">Let's go back to 'Logging was turned off?' for a second</h4>
+</section>
+<section id="slide-orgheadline31">
+<h4 id="orgheadline31">Also use AWS Config to validate the state of your IAM footprint</h4>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var AWS = require('aws-sdk')
+
+const params = {
+  ConfigurationRecorderName: 'IAM_Global_Permissions' // known correct state of your IAM
+}
+
+var config = AWS.ConfigService()
+config.startConfigurationRecorder(params, function(err, data) {
+  if (err) console.log(err, err.stack) // an error occurred
+  else     console.log(data)           // successful response
+})
+</code></pre>
+</div>
+</section>
+<section id="slide-orgheadline32">
+<h4 id="orgheadline32">Bonus round: Config Rules <i>can have Lambda function targets too</i></h4>
+</section>
+<section id="slide-orgheadline34">
+<h3 id="orgheadline34">Config rules publish to SNS</h3>
+
+<div class="figure">
+<p><img src="images/config_sns_topic.png" alt="config_sns_topic.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline35">
+<h3 id="orgheadline35">SNS fires off a Lambda event</h3>
+
+<div class="figure">
+<p><img src="images/sns_topic_lambda.png" alt="sns_topic_lambda.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline36">
+<h3 id="orgheadline36">Remediate config outliers within <i>seconds</i></h3>
+
+<div class="figure">
+<p><img src="images/highest_of_fives.gif" alt="highest_of_fives.gif" />
+</p>
+</div>
+
+</section>
+</section>
+<section>
+<section id="slide-orgheadline43">
+<h2 id="orgheadline43">Scenario 3: "Autoscaling" for DynamoDB?</h2>
+<div class="outline-text-2" id="text-orgheadline43">
+</div></section>
+<section id="slide-orgheadline38">
+<h3 id="orgheadline38">Remember this?</h3>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var AWS = require('aws-sdk')
+
+function handler(event, context, callback) {
+  const new_read_capacity = event["read_cap"]
+  const new_write_capacity = event["write_cap"]
+  const table_name = event["table_name"]
+  var dynamo = new AWS.DynamoDB()
+  const params = {
+   ProvisionedThroughput: {
+    ReadCapacityUnits: new_read_capacity, 
+    WriteCapacityUnits: new_write_capacity
+   }, 
+   TableName: table_name
+  }
+  dynamodb.updateTable(params, function(err, data) {
+    if (err) console.log(err, err.stack) // an error occurred
+    else     console.log(data)           // successful response
+  })
+  callback(null, 'All done all done all done.')
+}
+</code></pre>
+</div>
+<ul>
+<li>Can only do so many times per day</li>
+<li>Maybe cranking up througput isn't always the answer</li>
+
+</ul>
+
+</section>
+<section id="slide-orgheadline39">
+<h3 id="orgheadline39">Set and forget backpressure</h3>
+<ul>
+<li>Assuming you have an SQS queue feeding your Dynamo workers:</li>
+
+</ul>
+<div class="org-src-container">
+
+<pre><code class="javascript" >var AWS = require('aws-sdk')
+
+function handler(event, context, callback) {
+  var SQS = AWS.SQS()
+  const queue_url = event['queue_url']
+  const params = { 
+    Attributes: {
+      'DelaySeconds' : 25000 // come back tomorrow, we're closed
+    },
+    Queue_Url: queue_url
+  }
+  SQS.setQueueAttributes(params, function(err, data) {
+   // ...and so on
+  }
+}
+</code></pre>
+</div>
+
+</section>
+<section id="slide-orgheadline40">
+<h3 id="orgheadline40">Create an alarm for throttled requests</h3>
+
+<div class="figure">
+<p><img src="images/throttled_write_alarm.png" alt="throttled_write_alarm.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline41">
+<h3 id="orgheadline41">Create an alarm to unthrottle requests</h3>
+
+<div class="figure">
+<p><img src="images/unthrottle_requests_alarm.png" alt="unthrottle_requests_alarm.png" />
+</p>
+</div>
+</section>
+<section id="slide-orgheadline42">
+<h3 id="orgheadline42">Wire things up</h3>
+<ul>
+<li>Publish alarm events to separate SNS topics</li>
+<li>Connect the two Lambda fns to your two SNS topics</li>
+<li>Backpressure with no server to manage</li>
+
+</ul>
+
+</section>
+</section>
+<section>
+<section id="slide-orgheadline44">
+<h2 id="orgheadline44">Questions?</h2>
+</section>
+</section>
+<section>
+<section id="slide-orgheadline45">
+<h2 id="orgheadline45">Thanks for Joining Us!</h2>
+</section>
+</section>
+</div>
+</div>
+<script src="http://cdn.jsdelivr.net/reveal.js/3.0.0/lib/js/head.min.js"></script>
+<script src="http://cdn.jsdelivr.net/reveal.js/3.0.0/js/reveal.js"></script>
+
+<script>
+// Full list of configuration options available here:
+// https://github.com/hakimel/reveal.js#configuration
+Reveal.initialize({
+
+controls: true,
+progress: true,
+history: false,
+center: true,
+slideNumber: false,
+rollingLinks: false,
+keyboard: true,
+overview: true,
+
+theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+transitionSpeed: 'default',
+multiplex: {
+    secret: '', // null if client
+    id: '', // id, obtained from socket.io server
+    url: '' // Location of socket.io server
+},
+
+// Optional libraries used to extend on reveal.js
+dependencies: [
+ { src: 'http://cdn.jsdelivr.net/reveal.js/3.0.0/plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }]
+});
+</script>
+</body>
+</html>
